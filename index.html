@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Viewer & Formatter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom syntax highlighting colors */
+        .json-key { color: #d946ef; font-weight: bold; } /* Pink-500 */
+        .json-string { color: #22c55e; } /* Green-500 */
+        .json-number { color: #3b82f6; } /* Blue-500 */
+        .json-boolean { color: #f97316; font-weight: bold; } /* Orange-500 */
+        .json-null { color: #ef4444; font-weight: bold; } /* Red-500 */
+        
+        /* Drag and drop zone active state */
+        .drag-active {
+            border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+        }
+
+        /* Custom Scrollbar for the pre block */
+        pre::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        pre::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        pre::-webkit-scrollbar-thumb {
+            background: #c1c1c1; 
+            border-radius: 4px;
+        }
+        pre::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8; 
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans">
+
+    <!-- Main Container -->
+    <div class="max-w-4xl mx-auto p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 mb-2">JSON Viewer</h1>
+            <p class="text-slate-500">Upload a .json file to format and view it.</p>
+        </header>
+
+        <!-- Upload Area -->
+        <div id="drop-zone" class="bg-white rounded-xl shadow-sm border-2 border-dashed border-slate-300 p-8 text-center transition-all duration-200 cursor-pointer hover:border-slate-400 mb-6 group">
+            <input type="file" id="file-input" accept=".json,application/json" class="hidden">
+            
+            <div class="pointer-events-none">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-slate-400 group-hover:text-slate-500 mb-4 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="text-lg font-medium text-slate-700" id="drop-text">Click to upload or drag and drop</p>
+                <p class="text-sm text-slate-400 mt-1">Supports .json files</p>
+            </div>
+        </div>
+
+        <!-- Controls (Hidden by default) -->
+        <div id="controls" class="hidden flex justify-between items-center mb-2 px-1">
+            <div class="text-sm font-semibold text-slate-600" id="file-name-display">filename.json</div>
+            <div class="flex gap-2">
+                <button onclick="copyToClipboard()" class="text-xs bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md transition-colors shadow-sm font-medium flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                    Copy Raw
+                </button>
+                <button onclick="clearOutput()" class="text-xs bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-3 py-1.5 rounded-md transition-colors shadow-sm font-medium">
+                    Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Output Area -->
+        <div id="output-container" class="hidden bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-slate-800">
+            <pre id="json-output" class="p-6 text-sm font-mono text-slate-200 overflow-x-auto whitespace-pre-wrap break-words"></pre>
+        </div>
+
+        <!-- Status Message (Error or Warning) -->
+        <div id="status-message" class="hidden mt-4 p-4 rounded-lg text-sm text-center border"></div>
+
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const outputContainer = document.getElementById('output-container');
+        const jsonOutput = document.getElementById('json-output');
+        const statusMessage = document.getElementById('status-message');
+        const controls = document.getElementById('controls');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const dropText = document.getElementById('drop-text');
+
+        let rawJson = "";
+
+        // Handle Click to Upload
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        // Handle Drag and Drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-active');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-active');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-active');
+            if (e.dataTransfer.files.length) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function processFile(file) {
+            // Reset UI
+            statusMessage.classList.add('hidden');
+            outputContainer.classList.add('hidden');
+            controls.classList.add('hidden');
+            jsonOutput.innerHTML = '';
+            dropText.textContent = "Processing...";
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    rawJson = JSON.stringify(json, null, 4); // Store formatted raw string
+                    
+                    fileNameDisplay.textContent = file.name;
+                    
+                    // Always render with syntax highlighting, regardless of file size
+                    jsonOutput.innerHTML = syntaxHighlight(json);
+                    
+                    // Show UI
+                    outputContainer.classList.remove('hidden');
+                    controls.classList.remove('hidden');
+                } catch (error) {
+                    showStatus("Invalid JSON file. Please check the file syntax.", "error");
+                    console.error(error);
+                } finally {
+                    dropText.textContent = "Click to upload or drag and drop";
+                }
+            };
+
+            reader.onerror = () => {
+                showStatus("Error reading file.", "error");
+                dropText.textContent = "Click to upload or drag and drop";
+            };
+
+            reader.readAsText(file);
+        }
+
+        function syntaxHighlight(json) {
+            if (typeof json != 'string') {
+                json = JSON.stringify(json, undefined, 4);
+            }
+            
+            // Escape HTML entities to prevent XSS
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                var cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                        // Remove the colon from the match for styling, append it back outside the span
+                        return '<span class="' + cls + '">' + match.slice(0, -1) + '</span>:'; 
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        function showStatus(msg, type) {
+            statusMessage.textContent = msg;
+            statusMessage.classList.remove('hidden');
+            
+            if (type === 'error') {
+                statusMessage.className = 'mt-4 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm text-center';
+                // Hide output on error
+                outputContainer.classList.add('hidden');
+                controls.classList.add('hidden');
+            } else if (type === 'warning') {
+                statusMessage.className = 'mt-4 p-4 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-sm text-center';
+            }
+        }
+
+        function clearOutput() {
+            outputContainer.classList.add('hidden');
+            controls.classList.add('hidden');
+            statusMessage.classList.add('hidden');
+            fileInput.value = ''; // Reset input
+            rawJson = "";
+        }
+
+        function copyToClipboard() {
+            if (!rawJson) return;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = rawJson;
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                const originalText = document.querySelector('button[onclick="copyToClipboard()"]').innerHTML;
+                const button = document.querySelector('button[onclick="copyToClipboard()"]');
+                
+                button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Copied!`;
+                
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy', err);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+    </script>
+</body>
+</html>
